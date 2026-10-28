@@ -18,11 +18,34 @@ export interface RunningServer {
   close(): Promise<void>;
 }
 
-const listen = (srv: http.Server | https.Server, port: number, host: string) =>
+const listenSingle = (srv: http.Server | https.Server, port: number, host: string) =>
   new Promise<number>((resolve, reject) => {
-    srv.once('error', reject);
-    srv.listen(port, host, () => resolve((srv.address() as { port: number }).port));
+    const onError = (err: NodeJS.ErrnoException) => {
+      srv.removeListener('listening', onListening);
+      reject(err);
+    };
+    const onListening = () => {
+      srv.removeListener('error', onError);
+      resolve((srv.address() as { port: number }).port);
+    };
+    srv.once('error', onError);
+    srv.once('listening', onListening);
+    srv.listen(port, host);
   });
+
+const listenWithFallback = async (srv: http.Server | https.Server, ports: number[], host: string): Promise<number> => {
+  let lastErr: unknown;
+  for (const port of ports) {
+    try {
+      return await listenSingle(srv, port, host);
+    } catch (err) {
+      lastErr = err;
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code !== 'EADDRINUSE' && code !== 'EACCES') throw err;
+    }
+  }
+  throw lastErr;
+};
 
 /**
  * Builds and starts the LAN server: static client files, a tiny info endpoint and the signaling service.
@@ -75,9 +98,14 @@ export async function startServer(cfg: ServerConfig): Promise<RunningServer> {
   }
   const signaling = attachSignaling(servers, cfg);
 
-  const httpPort = await listen(httpServer, cfg.httpPort, cfg.host);
+  const httpCandidates = cfg.httpPort === 0 ? [0] : cfg.httpPorts && cfg.httpPorts[0] === cfg.httpPort ? cfg.httpPorts : [cfg.httpPort, cfg.httpPort + 1, cfg.httpPort + 2];
+  const httpPort = await listenWithFallback(httpServer, httpCandidates, cfg.host);
   cfg.httpPort = httpPort;
-  if (httpsServer) httpsPort = await listen(httpsServer, cfg.httpsPort, cfg.host);
+
+  if (httpsServer) {
+    const httpsCandidates = cfg.httpsPort === 0 ? [0] : cfg.httpsPorts && cfg.httpsPorts[0] === cfg.httpsPort ? cfg.httpsPorts : [cfg.httpsPort, cfg.httpsPort + 1, cfg.httpsPort + 2];
+    httpsPort = await listenWithFallback(httpsServer, httpsCandidates, cfg.host);
+  }
 
   const i = info();
   return {

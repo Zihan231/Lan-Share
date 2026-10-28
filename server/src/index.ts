@@ -14,11 +14,19 @@ for (const f of [path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../
 }
 
 const cfg = loadConfig();
+const preferredHttp = cfg.httpPort;
+const preferredHttps = cfg.httpsPort;
 
 startServer(cfg)
   .then((srv) => {
     const line = '─'.repeat(64);
     console.log(`\n${line}\n  LANShare signaling server is running (no files are stored here)\n${line}`);
+    if (srv.httpPort !== preferredHttp) {
+      console.log(`  Note: Port ${preferredHttp} was busy — fell back to port ${srv.httpPort}`);
+    }
+    if (srv.httpsPort && srv.httpsPort !== preferredHttps) {
+      console.log(`  Note: HTTPS port ${preferredHttps} was busy — fell back to port ${srv.httpsPort}`);
+    }
     console.log(`  This computer:   http://localhost:${srv.httpPort}`);
     if (srv.httpsPort) console.log(`                   https://localhost:${srv.httpsPort}`);
     const ips = lanAddresses();
@@ -33,6 +41,6 @@ startServer(cfg)
     process.on('SIGTERM', stop);
   })
   .catch((err) => {
-    console.error('Failed to start LANShare server:', err?.code === 'EADDRINUSE' ? `port already in use (${err.message})` : err);
+    console.error('Failed to start LANShare server:', err?.code === 'EADDRINUSE' ? `all configured ports are in use (${err.message})` : err);
     process.exit(1);
   });

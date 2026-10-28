@@ -245,4 +245,17 @@ describe('signaling server', () => {
     const late2 = await client();
     expect((await late2.join({ room: 'host-ctl' })).ok).toBe(true);
   });
+
+  it('automatically falls back to the 2nd or 3rd port if the primary port is already in use', async () => {
+    // srv is already occupying srv.httpPort on 127.0.0.1
+    const busyPort = srv.httpPort;
+    const cfg2 = loadConfig({ PORT: `${busyPort},${busyPort + 1},${busyPort + 2}`, HTTPS: '0', HOST: '127.0.0.1' } as NodeJS.ProcessEnv);
+    const srv2 = await startServer(cfg2);
+    try {
+      expect(srv2.httpPort).toBeGreaterThan(busyPort);
+      expect([busyPort + 1, busyPort + 2]).toContain(srv2.httpPort);
+    } finally {
+      await srv2.close();
+    }
+  });
 });
