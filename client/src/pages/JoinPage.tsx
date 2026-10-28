@@ -1,7 +1,7 @@
-import { ChevronDown, Loader2, Lock, ShieldCheck, TriangleAlert, Users } from 'lucide-react';
-import { useState } from 'react';
+import { ChevronDown, Crown, Loader2, Lock, ShieldCheck, TriangleAlert, Users } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { DEFAULT_ROOM_ID } from '@lanshare/shared';
-import { Button, Switch } from '../components/common/ui';
+import { Button, Pill, Switch } from '../components/common/ui';
 import { Logo } from '../components/layout/Sidebar';
 import { engine } from '../services/app/Engine';
 import { useApp } from '../stores/app';
@@ -12,6 +12,7 @@ export function JoinPage() {
   const status = useApp((s) => s.joinStatus);
   const joining = useApp((s) => s.phase === 'joining');
   const secure = useApp((s) => s.secureContext);
+  const isHost = useApp((s) => s.isHostDevice);
   const fp = useApp((s) => s.identity?.fingerprint);
   const [name, setName] = useState(savedName);
   const [open, setOpen] = useState(false);
@@ -19,9 +20,18 @@ export function JoinPage() {
   const [password, setPassword] = useState('');
   const [approval, setApproval] = useState(false);
 
+  useEffect(() => {
+    if (error && /password/i.test(error)) setOpen(true);
+  }, [error]);
+
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    void engine.join({ name, roomId: room, password: password || undefined, requireApproval: approval });
+    void engine.join({
+      name,
+      roomId: room,
+      password: password || undefined,
+      requireApproval: isHost ? approval : undefined,
+    });
   };
 
   return (
@@ -29,10 +39,17 @@ export function JoinPage() {
       <form onSubmit={submit} className="pop w-full max-w-md rounded-2xl border border-line bg-surface p-6 shadow-2xl sm:p-8" aria-labelledby="join-title">
         <div className="mb-6 flex items-center gap-3">
           <Logo size={48} />
-          <div>
-            <h1 id="join-title" className="text-2xl font-bold tracking-tight">
-              LANShare
-            </h1>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <h1 id="join-title" className="text-2xl font-bold tracking-tight">
+                LANShare
+              </h1>
+              {isHost && (
+                <Pill tone="brand" title="This browser is on the host computer running the server">
+                  <Crown size={11} /> Host
+                </Pill>
+              )}
+            </div>
             <p className="text-sm text-muted">Chat and share files on this network. No internet needed.</p>
           </div>
         </div>
@@ -66,18 +83,24 @@ export function JoinPage() {
             </div>
             <div>
               <label htmlFor="pw" className="mb-1 flex items-center gap-1 text-xs font-medium text-muted">
-                <Lock size={12} /> Room password (optional)
+                <Lock size={12} /> {isHost ? 'Room password (optional)' : 'Room password (if locked by host)'}
               </label>
               <input id="pw" type="password" autoComplete="off" value={password} onChange={(e) => setPassword(e.target.value)} className="h-10 w-full rounded-lg border border-line bg-surface px-3 text-sm" data-testid="join-password" />
-              <p className="mt-1 text-[11px] text-muted">Joining an existing room: enter its password. Creating a new room: this sets it.</p>
+              <p className="mt-1 text-[11px] text-muted">
+                {isHost
+                  ? 'As the host, you can set a password here or change/remove it anytime inside Settings.'
+                  : 'Only needed if the host has locked this room with a password.'}
+              </p>
             </div>
-            <label className="flex items-center justify-between gap-3 text-sm">
-              <span>
-                Require approval for new people
-                <span className="block text-[11px] text-muted">Only applies if you are the first to enter this room.</span>
-              </span>
-              <Switch checked={approval} onChange={setApproval} label="Require approval" />
-            </label>
+            {isHost && (
+              <label className="flex items-center justify-between gap-3 text-sm">
+                <span>
+                  Require approval for new people
+                  <span className="block text-[11px] text-muted">Host control — you can also toggle this anytime after joining.</span>
+                </span>
+                <Switch checked={approval} onChange={setApproval} label="Require approval" />
+              </label>
+            )}
           </div>
         )}
 
@@ -88,7 +111,7 @@ export function JoinPage() {
         )}
         {status === 'awaiting-approval' && (
           <p className="mt-4 flex items-start gap-2 rounded-lg bg-brand-soft p-3 text-sm text-brand" role="status">
-            <Users size={16} className="mt-0.5 shrink-0" /> Waiting for the room admin to approve you…
+            <Users size={16} className="mt-0.5 shrink-0" /> Waiting for the host to approve you…
           </p>
         )}
 

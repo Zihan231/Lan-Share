@@ -215,4 +215,34 @@ describe('signaling server', () => {
     a.s.close();
     await waitFor(() => b.events.some((e) => e[0] === 'admin' && e[1] === b.id));
   });
+
+  it('lets the host dynamically change room password, toggle approval, and kick users', async () => {
+    const host = await client();
+    const guest = await client();
+    await host.join({ room: 'host-ctl' });
+    await guest.join({ room: 'host-ctl' });
+
+    // Non-admin cannot change password or kick
+    guest.s.emit('room-config', { password: 'hacked' });
+    guest.s.emit('kick', host.id);
+    await new Promise((r) => setTimeout(r, 100));
+    expect(host.events.some((e) => e[0] === 'kicked')).toBe(false);
+
+    // Host sets a password on the already-created room
+    host.s.emit('room-config', { password: 'newpw', requireApproval: true });
+    await waitFor(() => guest.events.some((e) => e[0] === 'room-updated' && (e[1] as { hasPassword: boolean }).hasPassword === true));
+
+    const late = await client();
+    expect(await late.join({ room: 'host-ctl' })).toEqual({ ok: false, error: 'password-required' });
+
+    // Host kicks guest
+    host.s.emit('kick', guest.id);
+    await waitFor(() => guest.events.some((e) => e[0] === 'kicked'));
+
+    // Host removes password and disables approval
+    host.s.emit('room-config', { password: null, requireApproval: false });
+    await waitFor(() => host.events.some((e) => e[0] === 'room-updated' && (e[1] as { hasPassword: boolean }).hasPassword === false));
+    const late2 = await client();
+    expect((await late2.join({ room: 'host-ctl' })).ok).toBe(true);
+  });
 });

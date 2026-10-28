@@ -39,6 +39,7 @@ export interface AppState {
   toasts: Toast[];
   storage: { usage: number; quota: number; persisted: boolean; replicas: ReplicaRecord[] };
   lanUrls: string[];
+  isHostDevice: boolean;
   secureContext: boolean;
   canSaveToDisk: boolean;
   /** persisted file handles that need the user's permission after a refresh */
@@ -69,6 +70,7 @@ export const useApp = create<AppState>(() => ({
   toasts: [],
   storage: { usage: 0, quota: 0, persisted: false, replicas: [] },
   lanUrls: [],
+  isHostDevice: typeof location !== 'undefined' && (location.hostname === 'localhost' || location.hostname === '127.0.0.1' || location.hostname === '::1'),
   secureContext: typeof window !== 'undefined' ? window.isSecureContext : false,
   canSaveToDisk: typeof window !== 'undefined' && 'showSaveFilePicker' in window,
   needsReshare: 0,

@@ -13,6 +13,7 @@ import {
   type FileMeta,
   type PeerInfo,
   type PeerMsg,
+  type RoomConfigUpdate,
   type RoomRecord,
   type UnsignedRecord,
 } from '@lanshare/shared';
@@ -119,7 +120,10 @@ export class Engine {
       const info = await (await fetch('/api/info', { cache: 'no-store' })).json();
       const secure = location.protocol === 'https:';
       const urls: string[] = secure ? info.urls.https : info.urls.http;
-      set({ lanUrls: [...urls, ...(secure ? info.urls.http : info.urls.https)] });
+      set({
+        lanUrls: [...urls, ...(secure ? info.urls.http : info.urls.https)],
+        isHostDevice: typeof info.isHost === 'boolean' ? info.isHost : get().isHostDevice,
+      });
     } catch {
       /* offline dev server: not critical */
     }
@@ -271,6 +275,18 @@ export class Engine {
         this.noteAdmin(id);
         set((s) => (s.room ? { room: { ...s.room, adminId: id } } : {}));
       },
+      onRoomUpdated: (cfg) => {
+        set((s) => (s.room ? { room: { ...s.room, requireApproval: cfg.requireApproval, hasPassword: cfg.hasPassword } } : {}));
+      },
+      onKicked: () => {
+        this.teardown();
+        try {
+          sessionStorage.removeItem('lanshare.session');
+        } catch {
+          /* ignore */
+        }
+        set({ phase: 'join', room: null, peers: {}, joinStatus: 'idle', joinError: 'You were removed from the room by the host.' });
+      },
       onReplaced: () => {
         this.teardown();
         set({ phase: 'join', joinStatus: 'idle', joinError: 'LANShare was opened in another tab with this identity. Use "?profile=name" in the URL to run several identities in one browser.' });
@@ -313,6 +329,31 @@ export class Engine {
   decideJoin(peerId: string, allow: boolean) {
     this.signaling?.decide(peerId, allow);
     set((s) => ({ joinRequests: s.joinRequests.filter((r) => r.peerId !== peerId) }));
+  }
+
+  updateRoomConfig(cfg: RoomConfigUpdate) {
+    if (!this.isAdmin()) return;
+    this.signaling?.updateRoomConfig(cfg);
+    if (cfg.password !== undefined) {
+      try {
+        const raw = sessionStorage.getItem('lanshare.session');
+        if (raw) {
+          const parsed = JSON.parse(raw) as JoinOptions;
+          parsed.password = cfg.password || undefined;
+          sessionStorage.setItem('lanshare.session', JSON.stringify(parsed));
+        }
+      } catch {
+        /* ignore */
+      }
+      this.toast('success', cfg.password ? 'Room password updated.' : 'Room password removed.');
+    }
+  }
+
+  kickPeer(peerId: string) {
+    if (!this.isAdmin() || peerId === this.identity?.peerId) return;
+    const peerName = get().peers[peerId]?.name ?? 'User';
+    this.signaling?.kick(peerId);
+    this.toast('info', `Removed ${peerName} from the room.`);
   }
 
   setTrusted(peerId: string, trusted: boolean) {

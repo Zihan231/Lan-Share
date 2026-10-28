@@ -4,6 +4,7 @@ import type { PeerInfo } from '@lanshare/shared';
 export interface Member extends PeerInfo {
   socketId: string;
   joinedAt: number;
+  isHost?: boolean;
 }
 
 export interface PendingJoin {
@@ -29,11 +30,17 @@ export class Room {
   constructor(
     readonly id: string,
     password: string | undefined,
-    readonly requireApproval: boolean,
+    public requireApproval: boolean,
   ) {
+    this.setPassword(password);
+  }
+
+  setPassword(password: string | undefined) {
     if (password) {
       const salt = randomBytes(16);
       this.pw = { salt, hash: hashPassword(password, salt) };
+    } else {
+      this.pw = undefined;
     }
   }
 
@@ -52,10 +59,20 @@ export class Room {
     return [...this.members.values()].filter((m) => m.peerId !== peerId).map(({ peerId: p, name, publicKey }) => ({ peerId: p, name, publicKey }));
   }
 
-  /** Oldest remaining member becomes admin. */
+  /** Host machine member (or oldest remaining member if no host is present) becomes admin. */
   electAdmin(): string {
     let best: Member | undefined;
-    for (const m of this.members.values()) if (!best || m.joinedAt < best.joinedAt) best = m;
+    for (const m of this.members.values()) {
+      if (!best) {
+        best = m;
+        continue;
+      }
+      if (!!m.isHost !== !!best.isHost) {
+        if (m.isHost) best = m;
+      } else if (m.joinedAt < best.joinedAt) {
+        best = m;
+      }
+    }
     this.adminId = best?.peerId ?? '';
     return this.adminId;
   }

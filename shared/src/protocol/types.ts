@@ -76,6 +76,11 @@ export type SignalPayload =
   | { kind: 'offer' | 'answer'; sdp: string }
   | { kind: 'candidate'; candidate: string; sdpMid: string | null; sdpMLineIndex: number | null };
 
+export interface RoomConfigUpdate {
+  password?: string | null;
+  requireApproval?: boolean;
+}
+
 export interface ServerToClientEvents {
   challenge: (nonce: string) => void;
   'peer-joined': (peer: PeerInfo) => void;
@@ -85,6 +90,8 @@ export interface ServerToClientEvents {
   'join-request': (peer: PeerInfo) => void;
   'join-request-cancelled': (peerId: string) => void;
   admin: (peerId: string) => void;
+  'room-updated': (cfg: { requireApproval: boolean; hasPassword: boolean }) => void;
+  kicked: () => void;
   replaced: () => void;
 }
 
@@ -92,6 +99,8 @@ export interface ClientToServerEvents {
   join: (req: JoinRequest, ack: (res: JoinAck) => void) => void;
   signal: (to: string, payload: SignalPayload) => void;
   decide: (peerId: string, allow: boolean) => void;
+  'room-config': (cfg: RoomConfigUpdate) => void;
+  kick: (peerId: string) => void;
   rename: (name: string) => void;
   leave: () => void;
 }

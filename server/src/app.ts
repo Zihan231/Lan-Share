@@ -5,7 +5,7 @@ import path from 'node:path';
 import express from 'express';
 import type { ServerConfig } from './config.js';
 import { securityHeaders } from './middleware/security.js';
-import { lanAddresses } from './net.js';
+import { isHostIp, lanAddresses } from './net.js';
 import { attachSignaling, type SignalingServer } from './signaling/attach.js';
 import { loadTls } from './tls.js';
 
@@ -43,9 +43,12 @@ export async function startServer(cfg: ServerConfig): Promise<RunningServer> {
     },
     requiresRoomPassword: !!cfg.roomPassword,
   });
-  app.get('/api/info', (_req, res) => {
+  app.get('/api/info', (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
-    res.json(info());
+    res.json({
+      ...info(),
+      isHost: isHostIp(req.socket.remoteAddress, ips),
+    });
   });
   app.get('/healthz', (_req, res) => void res.type('text').send('ok'));
 

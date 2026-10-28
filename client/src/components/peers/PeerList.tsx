@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { BadgeCheck, Crown, ShieldQuestion, Users } from 'lucide-react';
+import { BadgeCheck, Crown, ShieldQuestion, UserMinus, Users } from 'lucide-react';
 import { engine } from '../../services/app/Engine';
 import { useApp } from '../../stores/app';
 import type { PeerConn, UiPeer } from '../../types';
@@ -29,9 +29,9 @@ export function PeerList() {
         <Avatar id={identity?.peerId ?? 'me'} name={name || 'You'} status="online" />
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-semibold">{name} <span className="font-normal text-muted">(you)</span></div>
-          <div className="text-xs text-muted">{isAdmin ? 'Room admin' : 'Online'}</div>
+          <div className="text-xs text-muted">{isAdmin ? 'Host' : 'Online'}</div>
         </div>
-        {isAdmin && <Crown size={14} className="text-amber-500" aria-label="Room admin" />}
+        {isAdmin && <Crown size={14} className="text-amber-500" aria-label="Host" />}
       </div>
       {sorted.length === 0 && (
         <EmptyState icon={<Users size={22} />} title="Nobody else is here yet">
@@ -44,7 +44,7 @@ export function PeerList() {
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
               <span className="truncate text-sm font-semibold">{p.name}</span>
-              {p.isAdmin && <Crown size={13} className="shrink-0 text-amber-500" aria-label="Room admin" />}
+              {p.isAdmin && <Crown size={13} className="shrink-0 text-amber-500" aria-label="Host" />}
             </div>
             <div className="truncate text-xs text-muted">
               {CONN_LABEL[p.conn]}
@@ -58,12 +58,12 @@ export function PeerList() {
           )}
         </button>
       ))}
-      {sel && <PeerDetails peer={sel} onClose={() => setSelected(null)} />}
+      {sel && <PeerDetails peer={sel} isAdmin={isAdmin} onClose={() => setSelected(null)} />}
     </div>
   );
 }
 
-function PeerDetails({ peer, onClose }: { peer: UiPeer; onClose: () => void }) {
+function PeerDetails({ peer, isAdmin, onClose }: { peer: UiPeer; isAdmin: boolean; onClose: () => void }) {
   const live = useApp((s) => s.peers[peer.peerId]) ?? peer;
   return (
     <Modal title={live.name} onClose={onClose}>
@@ -71,7 +71,7 @@ function PeerDetails({ peer, onClose }: { peer: UiPeer; onClose: () => void }) {
         <Avatar id={live.peerId} name={live.name} size={52} />
         <div className="flex flex-wrap gap-1.5">
           <Pill tone={live.conn === 'connected' ? 'ok' : 'warn'}>{CONN_LABEL[live.conn]}</Pill>
-          {live.isAdmin && <Pill tone="brand">Room admin</Pill>}
+          {live.isAdmin && <Pill tone="brand">Host</Pill>}
           <Pill tone={live.trusted ? 'ok' : 'neutral'}>{live.trusted ? 'Trusted by you' : 'Unverified'}</Pill>
         </div>
       </div>
@@ -94,7 +94,21 @@ function PeerDetails({ peer, onClose }: { peer: UiPeer; onClose: () => void }) {
         <span>Mark as trusted</span>
         <Switch checked={live.trusted} onChange={(v) => engine.setTrusted(live.peerId, v)} label="Mark as trusted" />
       </label>
-      <div className="mt-4 flex justify-end">
+      <div className="mt-4 flex items-center justify-between gap-2">
+        {isAdmin ? (
+          <Button
+            variant="danger"
+            onClick={() => {
+              engine.kickPeer(live.peerId);
+              onClose();
+            }}
+            data-testid="kick-peer"
+          >
+            <UserMinus size={15} /> Kick from room
+          </Button>
+        ) : (
+          <span />
+        )}
         <Button onClick={onClose}>Done</Button>
       </div>
     </Modal>

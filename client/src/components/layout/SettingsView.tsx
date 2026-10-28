@@ -1,9 +1,10 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { HardDrive, Info, LogOut, Moon, Shield, Sun, Monitor, Trash2 } from 'lucide-react';
+import { useShallow } from 'zustand/react/shallow';
+import { Crown, HardDrive, Info, Lock, LogOut, Moon, Shield, Sun, Monitor, Trash2, UserMinus } from 'lucide-react';
 import { engine } from '../../services/app/Engine';
 import { useApp } from '../../stores/app';
 import { formatBytes } from '../../utils/format';
-import { Button, Switch, cx } from '../common/ui';
+import { Avatar, Button, Pill, Switch, cx } from '../common/ui';
 import { applyTheme } from '../../utils/theme';
 import { LIMITS } from '@lanshare/shared';
 
@@ -41,13 +42,97 @@ export function SettingsView() {
   const secure = useApp((s) => s.secureContext);
   const canSave = useApp((s) => s.canSaveToDisk);
   const room = useApp((s) => s.room);
+  const peers = useApp(useShallow((s) => Object.values(s.peers)));
+  const isAdmin = !!room && room.adminId === identity?.peerId;
   const [nameDraft, setNameDraft] = useState(name);
+  const [pwDraft, setPwDraft] = useState('');
   useEffect(() => setNameDraft(name), [name]);
   useEffect(() => void engine.refreshStorage(), []);
   const cacheBytes = storage.replicas.reduce((n, r) => n + r.size, 0);
 
   return (
     <div className="space-y-4 p-4">
+      {isAdmin && room && (
+        <Section title="Host controls" icon={<Crown size={16} className="text-amber-500" />}>
+          <Row label="Require approval for new people" hint="New devices must be approved by you before entering the room.">
+            <Switch
+              checked={room.requireApproval}
+              onChange={(v) => engine.updateRoomConfig({ requireApproval: v })}
+              label="Require approval for new people"
+            />
+          </Row>
+          <div className="space-y-2 border-t border-line pt-3">
+            <div className="flex items-center justify-between gap-2">
+              <span className="flex items-center gap-1.5 text-sm">
+                <Lock size={14} /> Room password
+              </span>
+              <Pill tone={room.hasPassword ? 'brand' : 'neutral'}>{room.hasPassword ? 'Password active' : 'No password'}</Pill>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="password"
+                autoComplete="new-password"
+                value={pwDraft}
+                maxLength={128}
+                onChange={(e) => setPwDraft(e.target.value)}
+                placeholder={room.hasPassword ? 'Enter new password…' : 'Set a room password…'}
+                className="h-9 min-w-0 flex-1 rounded-lg border border-line bg-surface-2 px-3 text-sm"
+                aria-label="Room password"
+                data-testid="host-password-input"
+              />
+              <Button
+                size="sm"
+                variant="primary"
+                disabled={!pwDraft.trim()}
+                onClick={() => {
+                  engine.updateRoomConfig({ password: pwDraft });
+                  setPwDraft('');
+                }}
+                data-testid="host-password-save"
+              >
+                {room.hasPassword ? 'Update' : 'Set'}
+              </Button>
+              {room.hasPassword && (
+                <Button
+                  size="sm"
+                  variant="danger"
+                  onClick={() => {
+                    engine.updateRoomConfig({ password: null });
+                    setPwDraft('');
+                  }}
+                  data-testid="host-password-remove"
+                >
+                  Remove
+                </Button>
+              )}
+            </div>
+          </div>
+          {peers.length > 0 && (
+            <div className="space-y-2 border-t border-line pt-3">
+              <div className="text-xs font-medium text-muted">People in room ({peers.length})</div>
+              <div className="space-y-1.5">
+                {peers.map((p) => (
+                  <div key={p.peerId} className="flex items-center justify-between gap-2 rounded-lg bg-surface-2 px-2.5 py-1.5 text-sm">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <Avatar id={p.peerId} name={p.name} size={26} />
+                      <span className="truncate font-medium">{p.name}</span>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      onClick={() => engine.kickPeer(p.peerId)}
+                      data-testid={`kick-${p.peerId}`}
+                    >
+                      <UserMinus size={13} /> Kick
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </Section>
+      )}
+
       <Section title="Profile" icon={<Info size={16} />}>
         <Row label="Display name" hint="Shown next to your messages. Not your identity.">
           <input
@@ -64,8 +149,9 @@ export function SettingsView() {
           Your safety code: <span className="font-mono text-ink">{identity?.fingerprint}</span>
           <br />
           Room: <span className="font-mono text-ink">{room?.id}</span>
+          {isAdmin && ' · you are the host'}
           {room?.hasPassword && ' · password protected'}
-          {room?.requireApproval && ' · admin approval required'}
+          {room?.requireApproval && ' · host approval required'}
         </div>
         <Row label="Theme">
           <div className="flex rounded-lg bg-surface-2 p-0.5" role="radiogroup" aria-label="Theme">

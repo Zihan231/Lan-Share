@@ -6,6 +6,7 @@ import {
   type JoinAck,
   type JoinError,
   type PeerInfo,
+  type RoomConfigUpdate,
   type ServerToClientEvents,
   type SignalPayload,
 } from '@lanshare/shared';
@@ -35,6 +36,8 @@ export interface SignalingHandlers {
   onJoinRequest(peer: PeerInfo): void;
   onJoinRequestCancelled(peerId: string): void;
   onAdmin(peerId: string): void;
+  onRoomUpdated(cfg: { requireApproval: boolean; hasPassword: boolean }): void;
+  onKicked(): void;
   onReplaced(): void;
 }
 
@@ -81,6 +84,12 @@ export class SignalingClient {
     socket.on('join-request', (p) => this.h.onJoinRequest(p));
     socket.on('join-request-cancelled', (id) => this.h.onJoinRequestCancelled(id));
     socket.on('admin', (id) => this.h.onAdmin(id));
+    socket.on('room-updated', (cfg) => this.h.onRoomUpdated(cfg));
+    socket.on('kicked', () => {
+      this.stopped = true;
+      socket.disconnect();
+      this.h.onKicked();
+    });
     socket.on('replaced', () => {
       this.stopped = true;
       socket.disconnect();
@@ -129,6 +138,12 @@ export class SignalingClient {
   }
   decide(peerId: string, allow: boolean) {
     this.socket?.emit('decide', peerId, allow);
+  }
+  updateRoomConfig(cfg: RoomConfigUpdate) {
+    this.socket?.emit('room-config', cfg);
+  }
+  kick(peerId: string) {
+    this.socket?.emit('kick', peerId);
   }
   rename(name: string) {
     if (this.params) this.params.name = name;

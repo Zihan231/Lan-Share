@@ -18,6 +18,7 @@ import {
 } from '@lanshare/shared';
 import type { ServerConfig } from '../config.js';
 import { RateLimiter } from '../middleware/rateLimit.js';
+import { isHostIp, lanAddresses } from '../net.js';
 import { Room, type Member } from '../rooms/Room.js';
 
 type S = Socket<ClientToServerEvents, ServerToClientEvents>;
@@ -25,6 +26,7 @@ type S = Socket<ClientToServerEvents, ServerToClientEvents>;
 interface SocketState {
   nonce: string;
   ip: string;
+  isHost: boolean;
   roomId?: string;
   peerId?: string;
 }
@@ -53,6 +55,7 @@ export function attachSignaling(servers: Array<http.Server | https.Server>, cfg:
   for (const s of servers) io.attach(s);
 
   const rooms = new Map<string, Room>();
+  const hostIps = lanAddresses();
   const joinLimiter = new RateLimiter(cfg.joinsPerMinute, 60_000);
   const signalLimiter = new RateLimiter(400, 10_000);
   const state = new WeakMap<S, SocketState>();
@@ -110,7 +113,7 @@ export function attachSignaling(servers: Array<http.Server | https.Server>, cfg:
 
   io.on('connection', (socket: S) => {
     const ip = socket.handshake.address;
-    const st: SocketState = { nonce: randomId(), ip };
+    const st: SocketState = { nonce: randomId(), ip, isHost: isHostIp(ip, hostIps) };
     state.set(socket, st);
     socket.emit('challenge', st.nonce);
 
@@ -146,7 +149,9 @@ export function attachSignaling(servers: Array<http.Server | https.Server>, cfg:
         let room = rooms.get(req.roomId);
         if (!room) {
           if (rooms.size >= cfg.maxRooms) return fail('rate-limited');
-          room = new Room(req.roomId, cfg.roomPassword ?? (req.password || undefined), cfg.requireApproval || !!req.requireApproval);
+          const initPw = cfg.roomPassword ?? (st.isHost ? req.password || undefined : undefined);
+          const initApproval = cfg.requireApproval || (st.isHost && !!req.requireApproval);
+          room = new Room(req.roomId, initPw, initApproval);
           rooms.set(room.id, room);
         } else {
           const pw = room.checkPassword(req.password);
@@ -159,7 +164,8 @@ export function attachSignaling(servers: Array<http.Server | https.Server>, cfg:
         st.roomId = room.id;
         st.peerId = req.peerId;
 
-        const needsApproval = room.requireApproval && room.members.size > 0 && !room.admitted.has(req.peerId);
+        const hasHostAdmin = !!room.members.get(room.adminId)?.isHost;
+        const needsApproval = room.requireApproval && room.members.size > 0 && !room.admitted.has(req.peerId) && !(st.isHost && !hasHostAdmin);
         if (needsApproval) {
           const adminSock = sockOf(room.members.get(room.adminId)?.socketId ?? '');
           const prev = room.pending.get(req.peerId);
@@ -199,9 +205,16 @@ export function attachSignaling(servers: Array<http.Server | https.Server>, cfg:
           }
         }
         const others = room.peersExcept(req.peerId);
-        room.members.set(req.peerId, { ...peer, socketId: socket.id, joinedAt: Date.now() });
+        room.members.set(req.peerId, { ...peer, socketId: socket.id, joinedAt: Date.now(), isHost: st.isHost });
         room.admitted.add(req.peerId);
-        if (!room.adminId || !room.members.has(room.adminId)) room.electAdmin();
+        const prevAdmin = room.adminId;
+        if (!room.adminId || !room.members.has(room.adminId) || (st.isHost && !room.members.get(room.adminId)?.isHost)) {
+          const next = room.electAdmin();
+          if (prevAdmin && next && prevAdmin !== next) {
+            emitToRoom(room, (_m, s) => s.emit('admin', next), req.peerId);
+            for (const p of room.pending.values()) socket.emit('join-request', p.peer);
+          }
+        }
         emitToRoom(room, (_m, s) => s.emit('peer-joined', peer), req.peerId);
         ack({ ok: true, roomId: room.id, adminId: room.adminId, requireApproval: room.requireApproval, hasPassword: room.hasPassword, peers: others });
       } catch (e) {
@@ -231,6 +244,50 @@ export function attachSignaling(servers: Array<http.Server | https.Server>, cfg:
       room.pending.delete(peerId);
       p.resolve(!!allow);
       if (allow) room.admitted.add(peerId);
+    });
+
+    socket.on('room-config', (cfgUpdate) => {
+      if (!st.roomId || !st.peerId || !cfgUpdate || typeof cfgUpdate !== 'object') return;
+      const room = rooms.get(st.roomId);
+      if (!room || room.adminId !== st.peerId) return;
+      if (cfgUpdate.password === null || cfgUpdate.password === '') {
+        room.setPassword(undefined);
+      } else if (typeof cfgUpdate.password === 'string' && cfgUpdate.password.length <= 128) {
+        room.setPassword(cfgUpdate.password);
+      }
+      if (typeof cfgUpdate.requireApproval === 'boolean') {
+        room.requireApproval = cfgUpdate.requireApproval;
+        if (!room.requireApproval) {
+          for (const p of room.pending.values()) {
+            clearTimeout(p.timer);
+            room.admitted.add(p.peer.peerId);
+            p.resolve(true);
+          }
+          room.pending.clear();
+        }
+      }
+      emitToRoom(room, (_m, s) => s.emit('room-updated', { requireApproval: room.requireApproval, hasPassword: room.hasPassword }));
+    });
+
+    socket.on('kick', (targetPeerId) => {
+      if (!st.roomId || !st.peerId || typeof targetPeerId !== 'string' || targetPeerId === st.peerId) return;
+      const room = rooms.get(st.roomId);
+      if (!room || room.adminId !== st.peerId) return;
+      const target = room.members.get(targetPeerId);
+      if (!target) return;
+      room.members.delete(targetPeerId);
+      room.admitted.delete(targetPeerId);
+      const targetSock = sockOf(target.socketId);
+      if (targetSock) {
+        const tst = state.get(targetSock);
+        if (tst) {
+          tst.roomId = undefined;
+          tst.peerId = undefined;
+        }
+        targetSock.emit('kicked');
+        targetSock.disconnect(true);
+      }
+      emitToRoom(room, (_m, s) => s.emit('peer-left', targetPeerId));
     });
 
     socket.on('rename', (name) => {
