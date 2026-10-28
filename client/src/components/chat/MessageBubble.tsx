@@ -1,4 +1,4 @@
-import { memo, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { Check, CheckCheck, Copy, EyeOff, MoreVertical, Trash2 } from 'lucide-react';
 import type { RoomRecord } from '@lanshare/shared';
 import { engine } from '../../services/app/Engine';
@@ -8,11 +8,60 @@ import { FileCard } from '../files/FileCard';
 import { FileDetails, useFileEntries } from '../files/FilesLibrary';
 import { cx } from '../common/ui';
 
+interface MenuPos {
+  top?: number;
+  bottom?: number;
+  left?: number;
+  right?: number;
+}
+
 export const MessageBubble = memo(function MessageBubble({ rec, own, showName }: { rec: RoomRecord; own: boolean; showName: boolean }) {
-  const [menu, setMenu] = useState(false);
+  const [menuPos, setMenuPos] = useState<MenuPos | null>(null);
   const [details, setDetails] = useState<string | null>(null);
+  const bubbleRef = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
   const isAdmin = useApp((s) => s.room?.adminId === s.identity?.peerId);
   const canDeleteAll = own || isAdmin;
+  const menu = menuPos !== null;
+
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenuPos(null);
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close();
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [menu]);
+
+  const toggleMenu = () => {
+    if (menu) {
+      setMenuPos(null);
+      return;
+    }
+    const btn = btnRef.current?.getBoundingClientRect();
+    const bub = bubbleRef.current?.getBoundingClientRect();
+    if (!btn || !bub) {
+      setMenuPos({ top: 0, left: 0 });
+      return;
+    }
+    const menuWidth = 224; // w-56
+    const openUp = window.innerHeight - btn.bottom < 220;
+    const pos: MenuPos = openUp
+      ? { bottom: Math.max(8, window.innerHeight - btn.top + 6) }
+      : { top: Math.min(window.innerHeight - 160, btn.bottom + 6) };
+
+    if (own) {
+      pos.right = Math.max(12, window.innerWidth - bub.right);
+    } else {
+      pos.left = Math.min(Math.max(12, bub.left), Math.max(12, window.innerWidth - menuWidth - 12));
+    }
+    setMenuPos(pos);
+  };
 
   const copy = async () => {
     try {
@@ -21,12 +70,12 @@ export const MessageBubble = memo(function MessageBubble({ rec, own, showName }:
     } catch {
       engine.toast('error', 'Copy is blocked by the browser here; select the text manually.');
     }
-    setMenu(false);
+    setMenuPos(null);
   };
 
   return (
     <div className={cx('group flex', own ? 'justify-end' : 'justify-start')} data-testid="message" data-own={own}>
-      <div className={cx('relative max-w-[88%] min-w-0 rounded-2xl px-3 py-2 shadow-card sm:max-w-[72%]', own ? 'rounded-br-md bg-bubble-me' : 'rounded-bl-md bg-bubble-other')}>
+      <div ref={bubbleRef} className={cx('relative max-w-[88%] min-w-0 rounded-2xl px-3 py-2 shadow-card sm:max-w-[72%]', own ? 'rounded-br-md bg-bubble-me' : 'rounded-bl-md bg-bubble-other')}>
         {showName && !own && (
           <div className="mb-0.5 truncate text-xs font-semibold" style={{ color: nameColorFor(rec.authorId) }}>
             {rec.authorName}
@@ -44,19 +93,24 @@ export const MessageBubble = memo(function MessageBubble({ rec, own, showName }:
           <time dateTime={new Date(rec.ts).toISOString()}>{formatTime(rec.ts)}</time>
           {own && <Delivery id={rec.id} />}
           <button
+            ref={btnRef}
             type="button"
             aria-label="Message options"
             aria-expanded={menu}
-            onClick={() => setMenu((v) => !v)}
+            onClick={toggleMenu}
             className="-my-1 rounded-full p-1 opacity-60 transition-opacity hover:bg-black/5 hover:opacity-100 focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-70 dark:hover:bg-white/10"
           >
             <MoreVertical size={14} />
           </button>
         </div>
-        {menu && (
+        {menuPos && (
           <>
-            <div className="fixed inset-0 z-10" onClick={() => setMenu(false)} aria-hidden />
-            <div className={cx('pop absolute z-20 mt-1 w-56 rounded-xl border border-line bg-surface p-1 text-sm shadow-xl', own ? 'right-0' : 'left-0')} role="menu">
+            <div className="fixed inset-0 z-40" onClick={() => setMenuPos(null)} aria-hidden />
+            <div
+              style={menuPos}
+              className="pop fixed z-50 w-56 rounded-xl border border-line bg-surface p-1 text-sm shadow-xl"
+              role="menu"
+            >
               {rec.text && (
                 <MenuItem icon={<Copy size={15} />} onClick={() => void copy()}>
                   Copy text
@@ -66,7 +120,7 @@ export const MessageBubble = memo(function MessageBubble({ rec, own, showName }:
                 icon={<EyeOff size={15} />}
                 onClick={() => {
                   void engine.deleteRecord(rec.id, 'me');
-                  setMenu(false);
+                  setMenuPos(null);
                 }}
               >
                 Delete for me
@@ -76,7 +130,7 @@ export const MessageBubble = memo(function MessageBubble({ rec, own, showName }:
                   danger
                   icon={<Trash2 size={15} />}
                   onClick={() => {
-                    setMenu(false);
+                    setMenuPos(null);
                     if (confirm('Delete for everyone in the room?')) void engine.deleteRecord(rec.id, 'everyone');
                   }}
                 >
