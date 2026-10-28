@@ -1,6 +1,7 @@
-import { Check, Copy, FolderOpen, Repeat2, Settings as SettingsIcon, Wifi } from 'lucide-react';
-import { useState } from 'react';
+import { Check, Copy, FolderOpen, QrCode, Repeat2, Settings as SettingsIcon, Wifi } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { useApp, set, type Panel } from '../../stores/app';
+import { encodeQr } from '../../utils/qr';
 import { cx } from '../common/ui';
 import { PeerList } from '../peers/PeerList';
 
@@ -27,12 +28,14 @@ export function Sidebar() {
   const activeTransfers = useApp((s) => Object.values(s.transfers).filter((t) => !['done', 'failed', 'cancelled'].includes(t.state)).length);
   const lanUrls = useApp((s) => s.lanUrls);
   const [copied, setCopied] = useState(false);
+  const [showQr, setShowQr] = useState(false);
   const nav: Array<{ id: Exclude<Panel, null | 'people'>; label: string; icon: typeof FolderOpen; badge?: number }> = [
     { id: 'files', label: 'Shared files', icon: FolderOpen },
     { id: 'transfers', label: 'Transfers', icon: Repeat2, badge: activeTransfers },
     { id: 'settings', label: 'Settings', icon: SettingsIcon },
   ];
   const addr = lanUrls[0] ?? location.origin;
+  const qrMatrix = useMemo(() => (showQr ? encodeQr(addr) : null), [showQr, addr]);
 
   return (
     <div className="flex h-full flex-col">
@@ -77,7 +80,8 @@ export function Sidebar() {
           <button
             type="button"
             aria-label="Copy address"
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-surface-2 hover:bg-brand-soft"
+            title="Copy address"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-surface-2 hover:bg-brand-soft"
             onClick={async () => {
               try {
                 await navigator.clipboard.writeText(addr);
@@ -90,8 +94,48 @@ export function Sidebar() {
           >
             {copied ? <Check size={14} /> : <Copy size={14} />}
           </button>
+          <button
+            type="button"
+            aria-label={showQr ? 'Hide QR code' : 'Show QR code'}
+            title={showQr ? 'Hide QR code' : 'Show QR code'}
+            aria-expanded={showQr}
+            data-testid="qr-button"
+            className={cx(
+              'inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors',
+              showQr ? 'bg-brand text-on-brand' : 'bg-surface-2 hover:bg-brand-soft',
+            )}
+            onClick={() => setShowQr((v) => !v)}
+          >
+            <QrCode size={14} />
+          </button>
         </div>
+        {showQr && qrMatrix && (
+          <div className="mt-2.5 flex flex-col items-center rounded-xl bg-surface-2 p-3" data-testid="qr-code">
+            <div className="rounded-lg bg-white p-2 shadow-sm">
+              <QrSvg matrix={qrMatrix} size={156} />
+            </div>
+            <p className="mt-2 text-center text-[11px] text-muted">Scan with your phone camera on the same Wi-Fi</p>
+          </div>
+        )}
       </div>
     </div>
+  );
+}
+
+function QrSvg({ matrix, size }: { matrix: boolean[][]; size: number }) {
+  const n = matrix.length;
+  const quiet = 2;
+  const total = n + quiet * 2;
+  let d = '';
+  for (let r = 0; r < n; r++) {
+    for (let c = 0; c < n; c++) {
+      if (matrix[r][c]) d += `M${c + quiet},${r + quiet}h1v1h-1z`;
+    }
+  }
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${total} ${total}`} shapeRendering="crispEdges" role="img" aria-label="Invite QR code">
+      <rect width={total} height={total} fill="#ffffff" />
+      <path d={d} fill="#000000" />
+    </svg>
   );
 }
