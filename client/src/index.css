@@ -1,0 +1,162 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --bg: #eef2f5;
+  --surface: #ffffff;
+  --surface-2: #f2f5f8;
+  --border: #dde4ea;
+  --text: #0e1a24;
+  --muted: #566475;
+  --brand: #08796b;
+  --brand-hover: #066559;
+  --on-brand: #ffffff;
+  --brand-soft: #dff4ef;
+  --bubble-me: #d8f2ea;
+  --bubble-other: #ffffff;
+  --danger: #b3261e;
+  --danger-soft: #fde8e6;
+  --warn: #8a4b00;
+  --warn-soft: #fff1d6;
+  --ok: #17692f;
+  --ok-soft: #dcf5e3;
+  --shadow: 0 1px 2px rgb(15 30 45 / 0.06), 0 2px 8px rgb(15 30 45 / 0.05);
+  --name-l: 34%;
+  color-scheme: light;
+}
+
+.dark {
+  --bg: #090f13;
+  --surface: #111a20;
+  --surface-2: #18232b;
+  --border: #243440;
+  --text: #e8eef3;
+  --muted: #9aa8b4;
+  --brand: #34cdb6;
+  --brand-hover: #5ddac6;
+  --on-brand: #03201b;
+  --brand-soft: #123a34;
+  --bubble-me: #0f4038;
+  --bubble-other: #17232b;
+  --danger: #ff8b82;
+  --danger-soft: #3b1815;
+  --warn: #ffc56b;
+  --warn-soft: #3a2a0c;
+  --ok: #7be39a;
+  --ok-soft: #12321d;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 2px 10px rgb(0 0 0 / 0.3);
+  --name-l: 70%;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--border);
+  --color-ink: var(--text);
+  --color-muted: var(--muted);
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-on-brand: var(--on-brand);
+  --color-brand-soft: var(--brand-soft);
+  --color-bubble-me: var(--bubble-me);
+  --color-bubble-other: var(--bubble-other);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
+  --shadow-card: var(--shadow);
+}
+
+/* Base rules MUST live in a layer: unlayered CSS would beat Tailwind's (layered) utility classes. */
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    overscroll-behavior: none;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
+  }
+}
+
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.chat-bg {
+  background-color: var(--bg);
+  background-image: radial-gradient(color-mix(in srgb, var(--border) 70%, transparent) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--surface-2);
+  border-radius: 0.75rem;
+}
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--border) 60%, transparent), transparent);
+  animation: shimmer 1.4s infinite;
+}
+
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.pop {
+  animation: pop 0.16s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
